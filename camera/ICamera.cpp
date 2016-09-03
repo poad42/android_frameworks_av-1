@@ -21,12 +21,10 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <binder/Parcel.h>
-#include <camera/CameraUtils.h>
 #include <android/hardware/ICamera.h>
 #include <android/hardware/ICameraClient.h>
 #include <gui/IGraphicBufferProducer.h>
 #include <gui/Surface.h>
-#include <media/hardware/HardwareAPI.h>
 
 namespace android {
 namespace hardware {
@@ -154,22 +152,7 @@ public:
         Parcel data, reply;
         data.writeInterfaceToken(ICamera::getInterfaceDescriptor());
         data.writeStrongBinder(IInterface::asBinder(mem));
-
-        native_handle_t *nh = nullptr;
-        if (CameraUtils::isNativeHandleMetadata(mem)) {
-            VideoNativeHandleMetadata *metadata =
-                        (VideoNativeHandleMetadata*)(mem->pointer());
-            nh = metadata->pHandle;
-            data.writeNativeHandle(nh);
-        }
-
         remote()->transact(RELEASE_RECORDING_FRAME, data, &reply);
-
-        if (nh) {
-            // Close the native handle because camera received a dup copy.
-            native_handle_close(nh);
-            native_handle_delete(nh);
-        }
     }
 
     status_t setVideoBufferMode(int32_t videoBufferMode)
@@ -368,14 +351,6 @@ status_t BnCamera::onTransact(
             ALOGV("RELEASE_RECORDING_FRAME");
             CHECK_INTERFACE(ICamera, data, reply);
             sp<IMemory> mem = interface_cast<IMemory>(data.readStrongBinder());
-
-            if (CameraUtils::isNativeHandleMetadata(mem)) {
-                VideoNativeHandleMetadata *metadata =
-                        (VideoNativeHandleMetadata*)(mem->pointer());
-                metadata->pHandle = data.readNativeHandle();
-                // releaseRecordingFrame will be responsble to close the native handle.
-            }
-
             releaseRecordingFrame(mem);
             return NO_ERROR;
         } break;
