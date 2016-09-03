@@ -37,7 +37,6 @@
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/MediaErrors.h>
 #include <utils/misc.h>
-#include <utils/NativeHandle.h>
 
 static const OMX_U32 kPortIndexInput = 0;
 static const OMX_U32 kPortIndexOutput = 1;
@@ -152,13 +151,8 @@ struct BufferMeta {
         mGraphicBuffer = graphicBuffer;
     }
 
-    void setNativeHandle(const sp<NativeHandle> &nativeHandle) {
-        mNativeHandle = nativeHandle;
-    }
-
 private:
     sp<GraphicBuffer> mGraphicBuffer;
-    sp<NativeHandle> mNativeHandle;
     sp<IMemory> mMem;
     size_t mSize;
     bool mIsBackup;
@@ -884,43 +878,6 @@ status_t OMXNodeInstance::updateGraphicBufferInMeta(
     return updateGraphicBufferInMeta_l(
             portIndex, graphicBuffer, buffer, header,
             portIndex == kPortIndexOutput /* updateCodecBuffer */);
-}
-
-status_t OMXNodeInstance::updateNativeHandleInMeta(
-        OMX_U32 portIndex, const sp<NativeHandle>& nativeHandle, OMX::buffer_id buffer) {
-    Mutex::Autolock autoLock(mLock);
-    OMX_BUFFERHEADERTYPE *header = findBufferHeader(buffer);
-    // No need to check |nativeHandle| since NULL is valid for it as below.
-    if (header == NULL) {
-        ALOGE("b/25884056");
-        return BAD_VALUE;
-    }
-
-    if (portIndex != kPortIndexInput && portIndex != kPortIndexOutput) {
-        return BAD_VALUE;
-    }
-
-    BufferMeta *bufferMeta = (BufferMeta *)(header->pAppPrivate);
-    // update backup buffer for input, codec buffer for output
-    sp<ABuffer> data = bufferMeta->getBuffer(
-            header, portIndex == kPortIndexInput /* backup */, false /* limit */);
-    bufferMeta->setNativeHandle(nativeHandle);
-    if (mMetadataType[portIndex] == kMetadataBufferTypeNativeHandleSource
-            && data->capacity() >= sizeof(VideoNativeHandleMetadata)) {
-        VideoNativeHandleMetadata &metadata = *(VideoNativeHandleMetadata *)(data->data());
-        metadata.eType = mMetadataType[portIndex];
-        metadata.pHandle =
-            nativeHandle == NULL ? NULL : const_cast<native_handle*>(nativeHandle->handle());
-    } else {
-        CLOG_ERROR(updateNativeHandleInMeta, BAD_VALUE, "%s:%u, %#x bad type (%d) or size (%zu)",
-            portString(portIndex), portIndex, buffer, mMetadataType[portIndex], data->capacity());
-        return BAD_VALUE;
-    }
-
-    CLOG_BUFFER(updateNativeHandleInMeta, "%s:%u, %#x := %p",
-            portString(portIndex), portIndex, buffer,
-            nativeHandle == NULL ? NULL : nativeHandle->handle());
-    return OK;
 }
 
 status_t OMXNodeInstance::createGraphicBufferSource(
